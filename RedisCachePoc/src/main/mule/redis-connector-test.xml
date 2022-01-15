@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+	xmlns:redis="http://www.mulesoft.org/schema/mule/redis"
+	xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core"
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd 
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/redis http://www.mulesoft.org/schema/mule/redis/current/mule-redis.xsd">
+	<redis:redis-config name="Redis_Redis" doc:name="Redis Redis" doc:id="2ca71231-84ad-458b-9673-013065b0e8ba" >
+		<redis:nonclustered-connection password="${redis.password}" entryTTL="${redis.entryTTL}" maxTotal="${redis.maxTotal}" maxIdle="${redis.maxIdle}" minIdle="${redis.minIdle}"/>
+	</redis:redis-config>
+	<flow name="test-redis-getcustomerFlow" doc:id="3c81488a-46ed-4c0c-8859-8bab635c649d" >
+		<http:listener doc:name="Listener" doc:id="1bbddca8-3cdc-4c8f-baab-54eb6e518b6d" config-ref="HTTP_Listener_config" path="/redis-customer"/>
+		<logger level="INFO" doc:name="Logger" doc:id="e80a96d6-9ae9-450d-951f-7cde3b8e2ac9" message="payload received inside the EAPI #[payload]"/>
+		<logger level="INFO" doc:name="Request received" doc:id="20253a9b-4b96-4780-82c3-10c205bf88ec" message="Request received for customerId in EAPI #[payload.customerId]"/>
+		<set-variable value="#[payload.customerId]" doc:name="customerId" doc:id="f4d2afc2-2212-4b65-a5d9-71ca1526c29d" variableName="customerId"/>
+		<set-variable value='#["Request received for customerId in EAPI " ++ vars.customerId]' doc:name="Request received for customerId in EAPI" doc:id="41dbb7da-9da4-42ee-a6f7-0ab938d4896c" variableName="logvar"/>
+		<redis:get doc:name="Get" doc:id="a5f2c6a0-b68c-4713-8a9d-727afd0aff13" config-ref="Redis_Redis" key="#[vars.customerId]" />
+		<choice doc:name="Choice" doc:id="f4d8887b-06db-4112-a21c-7d9da6832354" >
+			<when expression="#[isEmpty(payload)]">
+				<flow-ref doc:name="sapiFlow" doc:id="fd703a4f-03ed-4ed3-b691-898c4d7edb57" name="sapiFlow"/>
+				<ee:transform doc:name="Convert payload to application/java" doc:id="bf67c895-5c39-49c3-9fe4-607d5588807f">
+					<ee:message>
+					</ee:message>
+					<ee:variables>
+						<ee:set-variable variableName="response"><![CDATA[%dw 2.0
+output application/java
+---
+write(payload)]]></ee:set-variable>
+					</ee:variables>
+				</ee:transform>
+				<redis:set doc:name="Set" doc:id="1c5826db-f980-44df-8d97-e1fbd6c82e73" config-ref="Redis_Redis" key="#[vars.customerId]">
+					<redis:value><![CDATA[#[vars.response]]]></redis:value>
+				</redis:set>
+				<ee:transform doc:name="Read response as application/java" doc:id="331f1d73-02fc-4f56-bd96-9ba350fe8fb6" >
+					<ee:message >
+						<ee:set-payload ><![CDATA[%dw 2.0
+output application/java
+---
+read(vars.response)]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+			</when>
+			<otherwise>
+				<logger level="INFO" doc:name="Logger" doc:id="8403c733-c1c9-45a2-8a77-3ff48a96761e" message="CustomerId exists in Redis Cache and so retrieving #[vars.customerId]" />
+				<set-variable value='#[vars.logvar ++ "|" ++ " CustomerId exists in Redis Cache and so retrieving " ++ vars.customerId]' doc:name="Set Variable" doc:id="453edb1e-7fec-4bd3-9388-7868614f8417" variableName="logvar" />
+				<ee:transform doc:name="Transform Message" doc:id="872e7fbd-c64e-411d-bb49-7826b4b28d18" >
+					<ee:message >
+						<ee:set-payload ><![CDATA[%dw 2.0
+output application/java
+---
+read(payload)]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+			</otherwise>
+		</choice>
+		<logger level="INFO" doc:name="Sending response" doc:id="41367e9e-44d1-4243-b122-8a9df1aa3462" message="Sending response for customerId in EAPI #[vars.customerId]" />
+		<set-variable value='#[vars.logvar ++ "|" ++ " Sending response for customerId in EAPI " ++ vars.customerId]' doc:name="logvar" doc:id="74b560cb-6e4d-4326-b194-3f0eb2078d49" variableName="logvar"/>
+		<ee:transform doc:name="Final response" doc:id="45fb0d57-40dc-4eb0-8346-93c8d09db750" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{
+	"QueryResylt":payload,
+	"Log":vars.logvar	
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<error-handler >
+			<on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue" doc:id="3fb84dd1-bcc7-4acb-bb99-973ec5d32dc5" >
+				<logger level="INFO" doc:name="Logger" doc:id="90a8b183-f672-4889-96f9-37f8836aef8e" message="#[error.description]"/>
+				<set-payload value="#[error.description]" doc:name="Set Payload" doc:id="237f7aa8-265e-4af9-bdae-824b402e9568" />
+			</on-error-continue>
+		</error-handler>
+	</flow>
+	<flow name="redis-connector-invalidateCacheFlow" doc:id="8df159e4-8015-4ef3-954d-e7f8a36ec008" >
+		<http:listener doc:name="Listener" doc:id="e152e887-8da7-4d95-a185-3bdee7e5269f" config-ref="HTTP_Listener_config" path="/redis-customer" allowedMethods="PUT"/>
+		<logger level="INFO" doc:name="Logger" doc:id="f8485374-ae4f-4d5e-86b8-d695fb6f5252" message="Invalidating the Redis Cache key #[payload.customerId]"/>
+		<set-payload value="#[payload]" doc:name="Set Payload" doc:id="3f49b51b-0dda-43fe-bd5e-42c4df1d355b" mimeType="application/json"/>
+		<set-variable value="#[payload.customerId]" doc:name="Set Variable" doc:id="126b029c-f1b0-49b5-a811-0d297df513cb" variableName="customerId"/>
+		<http:request method="PUT" doc:name="Request" doc:id="0d05c4b5-deda-4395-9147-e1a6a8e2c10d" config-ref="HTTP_Request_configuration" path="/customer/{customerId}" target="response">
+			<http:body><![CDATA[#[%dw 2.0
+output application/json
+---
+{"addressline":payload.addressline}]]]></http:body>
+			<http:uri-params><![CDATA[#[output application/java
+---
+{
+	"customerId" : payload.customerId
+}]]]></http:uri-params>
+		</http:request>
+		<redis:del doc:name="Del" doc:id="a6a318e0-67e7-4c9c-aee1-aaa9d9da42d7" config-ref="Redis_Redis" key="#[vars.customerId]"/>
+		<logger level="INFO" doc:name="Logger" doc:id="7296d4dc-bc8a-4b78-b180-323aaf4d9f7f" message="Invalidating the Cache key #[vars.customerId] completed"/>
+		<ee:transform doc:name="Transform Message" doc:id="7afb4c3e-8ebc-4c71-aecb-bda8af9d2d53" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+vars.response]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<error-handler >
+			<on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue" doc:id="da822d30-fc1b-47e7-84aa-7649e4bd5f08" >
+				<logger level="INFO" doc:name="Logger" doc:id="747b8e25-b4c7-4a72-a528-7f493080e009" message="#[error.description]"/>
+				<set-payload value="#[error.description]" doc:name="Set Payload" doc:id="2a172c32-7943-4f17-b66e-d62634cecac2" />
+			</on-error-continue>
+		</error-handler>
+	</flow>
+	</mule>

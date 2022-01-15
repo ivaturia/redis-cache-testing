@@ -1,0 +1,4 @@
+%dw 2.0
+
+type auto_2563e7bb_f233_4db8_b797_cb586550c970_Output_Variables_logvar = Any
+

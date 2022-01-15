@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:os="http://www.mulesoft.org/schema/mule/os"
+	xmlns:redis="http://www.mulesoft.org/schema/mule/redis" xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+	xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/redis http://www.mulesoft.org/schema/mule/redis/current/mule-redis.xsd
+http://www.mulesoft.org/schema/mule/os http://www.mulesoft.org/schema/mule/os/current/mule-os.xsd">
+	<http:listener-config name="HTTP_Listener_config" doc:name="HTTP Listener config" doc:id="25b21868-a745-4620-adfa-55374f5ab2c7" >
+		<http:listener-connection host="${http.listener.host}" port="${http.listener.port}" />
+	</http:listener-config>
+	<ee:object-store-caching-strategy name="Default_Caching_Strategy" doc:name="Caching Strategy" doc:id="ead6374c-b29b-4f3e-b682-a639bbd78668" keyGenerationExpression="#[payload.customerId]">
+		<os:private-object-store alias="private_caching_objectstore" maxEntries="${private.maxEntries}" entryTtl="${private.entryTtl}" expirationInterval="${private.expirationInterval}" config-ref="ObjectStore_Config" />
+	</ee:object-store-caching-strategy>
+	<os:config name="ObjectStore_Config" doc:name="ObjectStore Config" doc:id="0017f0ef-76b6-40e0-9a2e-130525077453" >
+		<redis:nonclustered-connection password="${redis.password}" entryTTL="${redis.entryTTL}"/>
+	</os:config>
+	<http:request-config name="HTTP_Request_configuration" doc:name="HTTP Request configuration" doc:id="8807cbd8-13e6-4045-881d-48e41129d7ad" >
+		<http:request-connection host="${http.request.host}" port="${http.request.port}" />
+	</http:request-config>
+	<configuration-properties doc:name="Configuration properties" doc:id="abac2997-5993-4c03-9e49-b7e61b79d621" file="default.properties" />
+	<sub-flow name="sapiFlow" doc:id="2563e7bb-f233-4db8-b797-cb586550c970" >
+		<logger level="INFO" doc:name="Logger" doc:id="5b33716c-abaf-4f21-8998-60e8d1a0261c" message="Entering SAPI"/>
+		<set-variable value='#[vars.logvar ++ "|" ++ " Entering SAPI "]' doc:name="Set Variable" doc:id="ed2da3b0-0bda-4ebb-8275-67bf8640b2d0" variableName="logvar"/>
+		<logger level="INFO" doc:name="Querying database" doc:id="c3c385ee-f45b-4dcf-a359-342d44515c30" message="Calling customer API with Customer Id #[vars.customerId]" />
+		<set-variable value='#[vars.logvar ++ "|" ++ " Calling Customer API for customerId in SAPI " ++ vars.customerId]' doc:name="logvar" doc:id="d71a68e3-d4f5-4142-9e0a-b0494eddbd4c" variableName="logvar" />
+		<http:request method="GET" doc:name="Request" doc:id="06898eee-b9fd-47c0-ab04-3042725cebf0" config-ref="HTTP_Request_configuration" path="customer/{customerId}">
+				<http:uri-params><![CDATA[#[output application/java
+---
+{
+	"customerId" : vars.customerId
+}]]]></http:uri-params>
+			</http:request>
+		<logger level="INFO" doc:name="Query execution completed" doc:id="b1d56d90-31c8-4a03-805b-86b4936d7b28" message="Calling customer API with Customer Id #[vars.customerId] completed" />
+		<set-variable value='#[vars.logvar ++ "|" ++ " Calling customer API with Customer Id completed " ++ vars.customerId]' doc:name="logvar" doc:id="26562a6b-940e-4b21-bc62-54934629208a" variableName="logvar" />
+		<logger level="INFO" doc:name="Logger" doc:id="05880fc4-1465-4a98-a45c-aac4415221e3" message="Exiting SAPI"/>
+		<set-variable value='#[vars.logvar ++ "|" ++ " Exiting SAPI "]' doc:name="Set Variable" doc:id="f6ffd33e-2d2e-4d96-b641-46aa3d0b5e74" variableName="logvar"/>
+	</sub-flow>
+	<flow name="redis-cache-scopingFlow" doc:id="1a667fff-1d4a-4296-876a-b04c8b12b707" >
+		<http:listener doc:name="Listener" doc:id="48157917-ed7e-48ff-b5ae-fd52de3e765f" config-ref="HTTP_Listener_config" path="/customer" allowedMethods="POST"/>
+		<logger level="INFO" doc:name="Logger" doc:id="f7dfa2f4-37d9-4c31-9f47-13a7225d07a1" message="payload received inside the EAPI #[payload]"/>
+		<logger level="INFO" doc:name="Request received" doc:id="9623ceed-f6a6-4f36-b731-90d66e3dfb4d" message="Request received for customerId in EAPI #[payload.customerId]"/>
+		<set-variable value="#[payload.customerId]" doc:name="Set Variable" doc:id="2919a334-116d-474f-a649-2e72f9e869db" variableName="customerId"/>
+		<set-variable value='#["Request received for customerId in EAPI " ++ vars.customerId]' doc:name="logvar" doc:id="9660357a-7aaf-4b8a-a03b-b936842f9805" variableName="logvar"/>
+		<ee:cache doc:name="Cache" doc:id="9a9cc4eb-c967-452a-83c0-01d3236f78c8" cachingStrategy-ref="Default_Caching_Strategy">
+			<flow-ref doc:name="Flow Reference" doc:id="7a375abc-2c7f-4736-9cc2-a8eef3d37d11" name="sapiFlow" />
+		</ee:cache>
+		<logger level="INFO" doc:name="Sending response" doc:id="f1577a34-b009-49c0-935e-cc907529c0f4" message="Sending response for customerId in EAPI #[vars.customerId]" />
+		<set-variable value='#[vars.logvar ++ "|" ++ " Sending response for customerId in EAPI " ++ vars.customerId]' doc:name="logvar" doc:id="b8ca2ef4-7e43-4089-9549-fca51d6f32d6" variableName="logvar"/>
+		<ee:transform doc:name="Final response" doc:id="75fc327c-253e-4f0e-a553-97a5548e607a" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{
+	"QueryResylt":payload,
+	"Log":vars.logvar	
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<error-handler >
+			<on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue" doc:id="ec93f246-c603-4b1b-9a49-0a88bd094d0f" >
+				<logger level="INFO" doc:name="Logger" doc:id="eb71f3e2-0dfd-4369-9852-183ad21d4c21" message="#[error.description]"/>
+				<set-payload value="#[error.description]" doc:name="Set Payload" doc:id="d63a9f31-25f2-492f-b8b0-416cc8f3a9a5" />
+			</on-error-continue>
+		</error-handler>
+	</flow>
+	<flow name="invalidateCacheFlow" doc:id="e1dc58e0-48e8-437d-bf27-86b924e54306" >
+		<http:listener doc:name="Listener" doc:id="060fb9ba-0cc3-4235-8d6b-4b7c45e42a07" path="/invalidate-cache" config-ref="HTTP_Listener_config" allowedMethods="GET"/>
+		<logger level="INFO" doc:name="Logger" doc:id="d087a34b-4a7c-4a86-a083-87e7042b6cfb" message="Invalidating the Cache"/>
+		<ee:invalidate-cache doc:name="Invalidate Cache" doc:id="816b48b8-c297-4841-b188-a5a3ada277bc" cachingStrategy-ref="Default_Caching_Strategy"/>
+		<logger level="INFO" doc:name="Logger" doc:id="3c315ad0-b40b-479f-8c21-bf60bb185b0c" message="Invalidating completed"/>
+		<error-handler >
+			<on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue" doc:id="9ba92bc4-2846-44c5-8056-1e07a877ec4f" >
+				<logger level="INFO" doc:name="Logger" doc:id="13f84457-bc47-4e78-a937-47d05d43ebe5" message="#[error.description]"/>
+				<set-payload value="#[error.description]" doc:name="Set Payload" doc:id="864df97b-b320-47b5-8d19-e7222bc8a682" />
+			</on-error-continue>
+		</error-handler>
+	</flow>
+	<flow name="cachescoping-update-by-invalidating-key" doc:id="9bcc7c68-4f1e-48f2-b932-5b449c18b1f6" >
+		<http:listener doc:name="Listener" doc:id="02b9e353-4250-4bc9-8b1d-001e8756384b" path="/customer" config-ref="HTTP_Listener_config" allowedMethods="PUT"/>
+		<set-variable value="#[payload.customerId]" doc:name="CustomerId" doc:id="e32c4a24-fdb6-42dc-a35a-9211b2a1c09d" variableName="CustomerId"/>
+		<logger level="INFO" doc:name="Logger" doc:id="e641a53f-5343-44ba-a449-621fe644a53c" message="Invalidating the Cache key #[vars.customerId]"/>
+		<set-payload value="#[payload]" doc:name="Set Payload" doc:id="a8ce6181-acf6-4831-9e7c-a76b2b78f40c" mimeType="application/json"/>
+		<http:request method="PUT" doc:name="Request" doc:id="c78fd3a0-307e-43e7-8ebd-2591e6364711" config-ref="HTTP_Request_configuration" path="/customer/{customerId}">
+			<http:body><![CDATA[#[%dw 2.0
+output application/json
+---
+{"addressline":payload.addressline}]]]></http:body>
+			<http:uri-params><![CDATA[#[output application/java
+---
+{
+	"customerId" : vars.customerId
+}]]]></http:uri-params>
+		</http:request>
+		<ee:invalidate-key doc:name="Invalidate Key" doc:id="d4d7c1bb-f28a-4118-8ac2-f6f5a80583e2" cachingStrategy-ref="Default_Caching_Strategy" keyGenerationExpression="#[vars.customerId]"/>
+		<logger level="INFO" doc:name="Logger" doc:id="e46de73e-ff96-49bc-9736-c8af1ee14fc8" message="Invalidating the Cache key #[vars.customerId] completed"/>
+		<error-handler >
+			<on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue" doc:id="fa0fee52-3335-43e5-99c1-67c1f455ea59" >
+				<logger level="INFO" doc:name="Logger" doc:id="4ea216c2-f663-498c-8ec5-a58d90f98a46" message="#[error.description]"/>
+				<set-payload value="#[error.description]" doc:name="Set Payload" doc:id="88636968-df92-463b-a049-ab53fa45065e" />
+			</on-error-continue>
+		</error-handler>
+	</flow>
+</mule>
