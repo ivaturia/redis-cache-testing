@@ -65,7 +65,7 @@ POST http://localhost:8081/redis-customer
 
 Update Customer:
 
-PUT http://localhost:8081/customer
+PUT http://localhost:8081/redis-customer
   {
         "addressline":"8489 Strong St.",
         "customerId":"112"
